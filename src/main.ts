@@ -1,4 +1,4 @@
-import { fetchDriverStats, fetchSessionsByYear } from './api/f1Api'
+import { fetchDriverStats, fetchSessionsByYear, fetchDriversByYear, } from './api/f1Api'
 import { getWinner, getFastestLapDriver } from './utils/dataTransformers'
 import { 
   renderAllDrivers, 
@@ -31,7 +31,7 @@ function setupYearSelector(): void {
   if (!yearSelect) return
 
   const startYear = 2023
-  const currentYear = 2025 // Fijamos límite estable
+  const currentYear = new Date().getFullYear()
 
   const options: HTMLOptionElement[] = []
 
@@ -49,13 +49,9 @@ function setupYearSelector(): void {
 function populateSessionDropdown(sessions: SessionInfo[]): void {
   if (!sessionSelect) return
 
-  if (sessions.length === 0) {
-    const emptyOption = document.createElement('option')
-    emptyOption.value = ''
-    emptyOption.textContent = 'Sin sesiones disponibles'
-    sessionSelect.replaceChildren(emptyOption)
-    return
-  }
+  const defaultOption = document.createElement('option')
+  defaultOption.value = ''
+  defaultOption.textContent = '-- Selecciona una sesión --'
 
   const options = sessions.map((s) => {
     const option = document.createElement('option')
@@ -64,9 +60,9 @@ function populateSessionDropdown(sessions: SessionInfo[]): void {
     return option
   })
 
-  sessionSelect.replaceChildren(...options)
+  sessionSelect.replaceChildren(defaultOption, ...options)
+  sessionSelect.value = ''
 }
-
 function populateDriverDropdown(stats: DriverStats[]): void {
   if (!driverSelect) return
 
@@ -126,33 +122,53 @@ function updateView(): void {
   }
 }
 
-async function loadDataForYear(year: number, sessionKey?: number): Promise<void> {
+async function loadDataForYear(
+  year: number,
+  sessionKey?: number
+): Promise<void> {
   renderLoading()
 
   try {
-    // 1. Cargar la lista de sesiones del año
     availableSessions = await fetchSessionsByYear(year)
     populateSessionDropdown(availableSessions)
 
-    // Si se pasa sessionKey la usamos, si no cogemos la primera disponible (o última carrera)
-    const targetSessionKey = sessionKey || (availableSessions.length > 0 ? availableSessions[0].sessionKey : undefined)
+    currentSession = null
+    currentStats = []
+    currentWinner = null
+    currentFastest = null
 
-    if (sessionSelect && targetSessionKey) {
-      sessionSelect.value = targetSessionKey.toString()
+    if (!sessionKey) {
+      // Estado inicial: parrilla del año sin estadísticas de sesión.
+      currentStats = await fetchDriversByYear(year)
+
+      populateDriverDropdown(currentStats)
+      updateView()
+      return
     }
 
-    // 2. Traer la telemetría de esa sesión
-    const result = await fetchDriverStats(year, targetSessionKey)
+    if (sessionSelect) {
+      sessionSelect.value = sessionKey.toString()
+    }
+
+    const result = await fetchDriverStats(year, sessionKey)
+
     currentSession = result.session
     currentStats = result.stats
 
-    currentWinner = getWinner(currentStats, currentSession?.sessionType)
+    currentWinner = getWinner(
+      currentStats,
+      currentSession?.sessionType
+    )
+
     currentFastest = getFastestLapDriver(currentStats)
 
     populateDriverDropdown(currentStats)
     updateView()
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Error al cargar telemetría.'
+    const errorMsg = error instanceof Error
+      ? error.message
+      : 'Error al cargar telemetría.'
+
     renderError(errorMsg)
   }
 }
@@ -165,11 +181,15 @@ function initEvents(): void {
   })
 
   // Cambio de sesión -> Carga la sesión seleccionada del desplegable
-  sessionSelect?.addEventListener('change', (e) => {
-    const selectedYear = Number(yearSelect?.value || 2023)
-    const selectedSessionKey = Number((e.target as HTMLSelectElement).value)
-    loadDataForYear(selectedYear, selectedSessionKey)
-  })
+ sessionSelect?.addEventListener('change', (e) => {
+  const selectedYear = Number(yearSelect?.value || 2023)
+  const value = (e.target as HTMLSelectElement).value
+
+  loadDataForYear(
+    selectedYear,
+    value ? Number(value) : undefined
+  )
+})
 
   navButtons.forEach((btn) => {
     btn.addEventListener('click', () => {

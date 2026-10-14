@@ -172,3 +172,34 @@ export async function fetchDriverStats(year: number, sessionKey?: number): Promi
     stats: Array.from(statsMap.values())
   }
 }
+export async function fetchDriversByYear(year: number): Promise<DriverStats[]> {
+  const sessions = await fetchWithCache<any[]>(`/sessions?year=${year}`)
+
+  if (!sessions || sessions.length === 0) return []
+
+  // Usamos la última sesión del año para identificar la parrilla.
+  const latestSession = [...sessions].sort(
+    (a, b) =>
+      new Date(b.date_start).getTime() - new Date(a.date_start).getTime()
+  )[0]
+
+  const drivers = await fetchWithCache<any[]>(
+    `/drivers?session_key=${latestSession.session_key}`
+  )
+
+  return drivers
+    .filter((driver) => driver.driver_number != null)
+    .map((driver) => ({
+      driverNumber: driver.driver_number,
+      fullName: driver.full_name || 'Piloto Desconocido',
+      acronym: driver.name_acronym || 'DRV',
+      teamName: driver.team_name || 'Escudería N/A',
+      teamColor: driver.team_color
+        ? `#${driver.team_color}`
+        : '#9a9ea7',
+      headshotUrl: driver.headshot_url || null,
+      totalLaps: 0,
+      bestLapTime: null,
+      averageLapTime: null
+    }))
+}
