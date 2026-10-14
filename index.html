@@ -1,13 +1,61 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>proyectoapi</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenF1 Dashboard</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Cabecera y Selección de Sesión/Año -->
+    <header class="header-container">
+      <div class="logo-title">
+        <span class="f1-icon">🏎️</span>
+        <h1>OpenF1 Dashboard</h1>
+      </div>
+      
+      <div class="session-selector-group">
+        <label for="year-select">Temporada:</label>
+        <select id="year-select" class="custom-select"></select>
+        <span id="session-title" class="session-badge">Cargando sesión...</span>
+      </div>
+    </header>
+
+    <!-- Botonera de Vistas (4 Modos) -->
+    <nav class="navigation-bar">
+      <button class="nav-btn active" data-view="grid">🏁 Parrilla General</button>
+      <button class="nav-btn" data-view="single">👤 Ficha Piloto</button>
+      <button class="nav-btn" data-view="winner">🏆 Ganador</button>
+      <button class="nav-btn" data-view="fastest">⚡ Mejor Vuelta</button>
+    </nav>
+
+    <!-- Barra de Filtros / Controles Dinámicos -->
+    <section class="controls-container">
+      <!-- Filtro Búsqueda (Modo Grid) -->
+      <div id="search-container" class="control-group">
+        <input 
+          type="text" 
+          id="search-input" 
+          placeholder="Buscar por piloto, equipo o acrónimo..." 
+          class="custom-input"
+        />
+      </div>
+
+      <!-- Filtro Seleccionar Piloto (Modo Single) -->
+      <div id="driver-select-container" class="control-group hidden">
+        <label for="driver-select">Seleccionar Piloto:</label>
+        <select id="driver-select" class="custom-select">
+          <option value="">-- Elige un piloto --</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Área de Contenido Principal -->
+    <main id="content-area" class="main-content"></main>
+  </div>
+
+  
+</body>
 </html>
