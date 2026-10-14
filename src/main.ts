@@ -1,4 +1,4 @@
-import { fetchDriverStats } from './api/f1Api'
+import { fetchDriverStats, fetchSessionsByYear } from './api/f1Api'
 import { getWinner, getFastestLapDriver } from './utils/dataTransformers'
 import { 
   renderAllDrivers, 
@@ -11,38 +11,27 @@ import {
 import type { DriverStats, SessionInfo } from './types/f1'
 
 // Estado global
+let availableSessions: SessionInfo[] = []
 let currentSession: SessionInfo | null = null
 let currentStats: DriverStats[] = []
 let currentWinner: DriverStats | null = null
 let currentFastest: DriverStats | null = null
 let currentView: 'grid' | 'single' | 'winner' | 'fastest' = 'grid'
 
-// Referencias al DOM
+// Referencias DOM
 const yearSelect = document.getElementById('year-select') as HTMLSelectElement | null
-const sessionTitleEl = document.getElementById('session-title') as HTMLElement | null
+const sessionSelect = document.getElementById('session-select') as HTMLSelectElement | null
 const driverSelectContainer = document.getElementById('driver-select-container')
 const driverSelect = document.getElementById('driver-select') as HTMLSelectElement | null
 const searchContainer = document.getElementById('search-container')
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null
 const navButtons = document.querySelectorAll<HTMLButtonElement>('.nav-btn')
 
-/**
- * Actualiza la insignia de información de la sesión en el DOM
- */
-function updateSessionBadge(): void {
-  if (!sessionTitleEl || !currentSession) return
-  
-  sessionTitleEl.textContent = `${currentSession.year} · ${currentSession.sessionName} (${currentSession.sessionType})`
-}
-
-/**
- * Genera dinámicamente las opciones del selector de año (desde 2023 hasta el actual)
- */
 function setupYearSelector(): void {
   if (!yearSelect) return
 
   const startYear = 2023
-  const currentYear = new Date().getFullYear()
+  const currentYear = 2025 // Fijamos límite estable
 
   const options: HTMLOptionElement[] = []
 
@@ -54,40 +43,51 @@ function setupYearSelector(): void {
   }
 
   yearSelect.replaceChildren(...options)
+  yearSelect.value = '2023' // Año por defecto estable
 }
 
-/**
- * Popula el desplegable del selector de piloto para el Modo 1 (Ficha Piloto) sin innerHTML
- */
+function populateSessionDropdown(sessions: SessionInfo[]): void {
+  if (!sessionSelect) return
+
+  if (sessions.length === 0) {
+    const emptyOption = document.createElement('option')
+    emptyOption.value = ''
+    emptyOption.textContent = 'Sin sesiones disponibles'
+    sessionSelect.replaceChildren(emptyOption)
+    return
+  }
+
+  const options = sessions.map((s) => {
+    const option = document.createElement('option')
+    option.value = s.sessionKey.toString()
+    option.textContent = `${s.sessionName} (${s.sessionType})`
+    return option
+  })
+
+  sessionSelect.replaceChildren(...options)
+}
+
 function populateDriverDropdown(stats: DriverStats[]): void {
   if (!driverSelect) return
 
-  // Opción por defecto
   const defaultOption = document.createElement('option')
   defaultOption.value = ''
   defaultOption.textContent = '-- Selecciona un piloto --'
 
-  // Ordenamos los pilotos por dorsal
   const sortedStats = [...stats].sort((a, b) => a.driverNumber - b.driverNumber)
 
-  // Creamos el array de nodos de opciones
   const options = sortedStats.map((driver) => {
     const option = document.createElement('option')
     option.value = driver.driverNumber.toString()
-    option.textContent = `#${driver.driverNumber} - ${driver.fullName} (${driver.acronym})`
+    option.textContent = `Nº ${driver.driverNumber} - ${driver.fullName} (${driver.acronym})`
     return option
   })
 
-  // Limpiamos el select y agregamos las nuevas opciones de forma limpia
   driverSelect.replaceChildren(defaultOption, ...options)
 }
 
-/**
- * Renderiza la pantalla y gestiona la visibilidad de los controles según la vista activa
- */
 function updateView(): void {
   if (currentView === 'grid') {
-    // Modo 0: Parrilla General -> Mostrar buscador, ocultar selector de piloto
     if (searchContainer) searchContainer.classList.remove('hidden')
     if (driverSelectContainer) driverSelectContainer.classList.add('hidden')
 
@@ -100,24 +100,25 @@ function updateView(): void {
 
     renderAllDrivers(filtered, currentWinner)
   } else if (currentView === 'single') {
-    // Modo 1: Ficha Piloto -> Ocultar buscador, mostrar selector de piloto
     if (searchContainer) searchContainer.classList.add('hidden')
     if (driverSelectContainer) driverSelectContainer.classList.remove('hidden')
+
+    if (driverSelect && !driverSelect.value && currentStats.length > 0) {
+      const sortedStats = [...currentStats].sort((a, b) => a.driverNumber - b.driverNumber)
+      driverSelect.value = sortedStats[0].driverNumber.toString()
+    }
 
     const selectedDriverNumber = Number(driverSelect?.value)
     const selectedDriver = currentStats.find((d) => d.driverNumber === selectedDriverNumber) || null
 
-    // Posición estimada en base a su ritmo en la lista general
     const position = selectedDriver ? currentStats.indexOf(selectedDriver) + 1 : 0
     renderSingleDriver(selectedDriver, position)
   } else if (currentView === 'winner') {
-    // Modo 2: Ganador -> Ocultar ambos controles
     if (searchContainer) searchContainer.classList.add('hidden')
     if (driverSelectContainer) driverSelectContainer.classList.add('hidden')
 
     renderWinnerView(currentWinner)
   } else if (currentView === 'fastest') {
-    // Modo 3: Mejor Vuelta -> Ocultar ambos controles
     if (searchContainer) searchContainer.classList.add('hidden')
     if (driverSelectContainer) driverSelectContainer.classList.add('hidden')
 
@@ -125,27 +126,29 @@ function updateView(): void {
   }
 }
 
-/**
- * Carga los datos desde la API de OpenF1 para el año seleccionado (>= 2023)
- */
-async function loadData(year: number): Promise<void> {
-  if (year < 2023) {
-    renderError('OpenF1 solo dispone de datos desde la temporada 2023 en adelante.')
-    return
-  }
-
+async function loadDataForYear(year: number, sessionKey?: number): Promise<void> {
   renderLoading()
 
   try {
-    const result = await fetchDriverStats(year)
+    // 1. Cargar la lista de sesiones del año
+    availableSessions = await fetchSessionsByYear(year)
+    populateSessionDropdown(availableSessions)
+
+    // Si se pasa sessionKey la usamos, si no cogemos la primera disponible (o última carrera)
+    const targetSessionKey = sessionKey || (availableSessions.length > 0 ? availableSessions[0].sessionKey : undefined)
+
+    if (sessionSelect && targetSessionKey) {
+      sessionSelect.value = targetSessionKey.toString()
+    }
+
+    // 2. Traer la telemetría de esa sesión
+    const result = await fetchDriverStats(year, targetSessionKey)
     currentSession = result.session
     currentStats = result.stats
 
-    // El ganador solo es válido si la sesión es de tipo "Race"
     currentWinner = getWinner(currentStats, currentSession?.sessionType)
     currentFastest = getFastestLapDriver(currentStats)
 
-    updateSessionBadge()
     populateDriverDropdown(currentStats)
     updateView()
   } catch (error) {
@@ -154,17 +157,20 @@ async function loadData(year: number): Promise<void> {
   }
 }
 
-/**
- * Registra los manejadores de eventos para controles e interactividad
- */
 function initEvents(): void {
-  // Evento al cambiar de año en el selector
+  // Cambio de año -> Recarga sesiones
   yearSelect?.addEventListener('change', (e) => {
     const selectedYear = Number((e.target as HTMLSelectElement).value)
-    loadData(selectedYear)
+    loadDataForYear(selectedYear)
   })
 
-  // Eventos para cambiar de vista desde la botonera superior
+  // Cambio de sesión -> Carga la sesión seleccionada del desplegable
+  sessionSelect?.addEventListener('change', (e) => {
+    const selectedYear = Number(yearSelect?.value || 2023)
+    const selectedSessionKey = Number((e.target as HTMLSelectElement).value)
+    loadDataForYear(selectedYear, selectedSessionKey)
+  })
+
   navButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       navButtons.forEach((b) => b.classList.remove('active'))
@@ -175,27 +181,21 @@ function initEvents(): void {
     })
   })
 
-  // Evento de búsqueda en tiempo real (Parrilla General)
   searchInput?.addEventListener('input', () => {
     if (currentView === 'grid') updateView()
   })
 
-  // Evento de selección de piloto en el dropdown (Ficha Piloto)
   driverSelect?.addEventListener('change', () => {
     if (currentView === 'single') updateView()
   })
 }
 
-/**
- * Punto de entrada y arranque de la aplicación
- */
 function init(): void {
   setupYearSelector()
   initEvents()
 
-  const initialYear = yearSelect ? Number(yearSelect.value) : 2023
-  loadData(initialYear)
+  const initialYear = Number(yearSelect?.value || 2023)
+  loadDataForYear(initialYear)
 }
 
-// Arrancar la app
 init()

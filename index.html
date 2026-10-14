@@ -9,7 +9,6 @@
 </head>
 <body>
   <div id="app">
-    <!-- Cabecera y Selección de Sesión/Año -->
     <header class="header-container">
       <div class="logo-title">
         <span class="f1-icon">🏎️</span>
@@ -19,11 +18,14 @@
       <div class="session-selector-group">
         <label for="year-select">Temporada:</label>
         <select id="year-select" class="custom-select"></select>
-        <span id="session-title" class="session-badge">Cargando sesión...</span>
+
+        <label for="session-select">Sesión:</label>
+        <select id="session-select" class="custom-select">
+          <option value="">Cargando sesiones...</option>
+        </select>
       </div>
     </header>
 
-    <!-- Botonera de Vistas (4 Modos) -->
     <nav class="navigation-bar">
       <button class="nav-btn active" data-view="grid">🏁 Parrilla General</button>
       <button class="nav-btn" data-view="single">👤 Ficha Piloto</button>
@@ -31,9 +33,7 @@
       <button class="nav-btn" data-view="fastest">⚡ Mejor Vuelta</button>
     </nav>
 
-    <!-- Barra de Filtros / Controles Dinámicos -->
     <section class="controls-container">
-      <!-- Filtro Búsqueda (Modo Grid) -->
       <div id="search-container" class="control-group">
         <input 
           type="text" 
@@ -43,7 +43,6 @@
         />
       </div>
 
-      <!-- Filtro Seleccionar Piloto (Modo Single) -->
       <div id="driver-select-container" class="control-group hidden">
         <label for="driver-select">Seleccionar Piloto:</label>
         <select id="driver-select" class="custom-select">
@@ -52,10 +51,8 @@
       </div>
     </section>
 
-    <!-- Área de Contenido Principal -->
     <main id="content-area" class="main-content"></main>
   </div>
 
-  
 </body>
 </html>

@@ -1,4 +1,4 @@
-import type { OpenF1Driver, OpenF1Lap, DriverStats, SessionInfo} from '../types/f1'
+import type { OpenF1Driver, OpenF1Lap, DriverStats, SessionInfo, FetchResult } from '../types/f1'
 
 const BASE_URL = 'https://api.openf1.org/v1'
 const CACHE_TTL_MS = 1000 * 60 * 30
@@ -45,12 +45,9 @@ export async function fetchWithCache<T>(endpoint: string): Promise<T> {
   const cachedData = getFromCache<T>(cacheKey)
 
   if (cachedData) {
-    console.log(`⚡ [Cache Hit] ${endpoint}`)
     return cachedData
   }
 
-  console.log(`🌐 [Network Request] ${endpoint}`)
-  
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`)
 
@@ -70,30 +67,60 @@ export async function fetchWithCache<T>(endpoint: string): Promise<T> {
 }
 
 /**
- * Obtiene la información de la sesión más reciente del año indicado y procesa
- * las estadísticas asociadas a esa sesión específica.
+ * Obtiene todas las sesiones de un año para poblar el desplegable
  */
-export async function fetchDriverStats(year: number = 2023): Promise<FetchResult> {
-  // 1. Obtener los datos de la sesión activa/última del año
-  const sessions = await fetchWithCache<any[]>(`/sessions?session_key=latest&year=${year}`)
-  
-  if (!sessions || sessions.length === 0) {
+export async function fetchSessionsByYear(year: number): Promise<SessionInfo[]> {
+  const sessions = await fetchWithCache<any[]>(`/sessions?year=${year}`)
+  if (!sessions || sessions.length === 0) return []
+
+  return sessions.map((s) => ({
+    sessionKey: s.session_key,
+    sessionName: `${s.location || s.country_name || 'GP'} - ${s.session_name || 'Sesión'}`,
+    sessionType: s.session_type || 'Unknown',
+    dateStart: s.date_start || '',
+    year
+  }))
+}
+
+/**
+ * Obtiene datos de la sesión seleccionada (o la última si no se pasa sessionKey)
+ */
+export async function fetchDriverStats(year: number, sessionKey?: number): Promise<FetchResult> {
+  let currentSession: SessionInfo | null = null
+
+  if (sessionKey) {
+    const sessions = await fetchWithCache<any[]>(`/sessions?session_key=${sessionKey}`)
+    if (sessions && sessions.length > 0) {
+      const s = sessions[0]
+      currentSession = {
+        sessionKey: s.session_key,
+        sessionName: `${s.location || s.country_name || 'GP'} - ${s.session_name || 'Sesión'}`,
+        sessionType: s.session_type || 'Unknown',
+        dateStart: s.date_start || '',
+        year
+      }
+    }
+  } else {
+    const sessions = await fetchWithCache<any[]>(`/sessions?session_key=latest&year=${year}`)
+    if (sessions && sessions.length > 0) {
+      const s = sessions[0]
+      currentSession = {
+        sessionKey: s.session_key,
+        sessionName: `${s.location || s.country_name || 'GP'} - ${s.session_name || 'Sesión'}`,
+        sessionType: s.session_type || 'Unknown',
+        dateStart: s.date_start || '',
+        year
+      }
+    }
+  }
+
+  if (!currentSession) {
     return { session: null, stats: [] }
   }
 
-  const currentSession = sessions[0]
-  const sessionInfo: SessionInfo = {
-    sessionKey: currentSession.session_key,
-    sessionName: currentSession.session_name || 'Carrera / Sesión',
-    sessionType: currentSession.session_type || 'Unknown',
-    dateStart: currentSession.date_start || '',
-    year
-  }
-
-  // 2. Traer pilotos y vueltas con el session_key exacto obtenido
   const [driversData, lapsData] = await Promise.all([
-    fetchWithCache<any[]>(`/drivers?session_key=${sessionInfo.sessionKey}`),
-    fetchWithCache<any[]>(`/laps?session_key=${sessionInfo.sessionKey}`)
+    fetchWithCache<any[]>(`/drivers?session_key=${currentSession.sessionKey}`),
+    fetchWithCache<any[]>(`/laps?session_key=${currentSession.sessionKey}`)
   ])
 
   const statsMap = new Map<number, DriverStats>()
@@ -141,7 +168,7 @@ export async function fetchDriverStats(year: number = 2023): Promise<FetchResult
   })
 
   return {
-    session: sessionInfo,
+    session: currentSession,
     stats: Array.from(statsMap.values())
   }
 }
