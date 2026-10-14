@@ -1,157 +1,166 @@
 import type { DriverStats } from '../types/f1'
 
 /**
- * Formatea segundos a formato de tiempo F1 (ej. 84.321 -> 1:24.321)
+ * Formatea segundos al formato estándar de telemetría F1 (M:SS.mmm)
  */
 export function formatTime(seconds: number | null): string {
-  if (seconds === null) return 'N/A'
-  const mins = Math.floor(seconds / 60)
+  if (seconds === null || seconds <= 0) return 'N/A'
+
+  const hrs = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
   const secs = (seconds % 60).toFixed(3)
-  return mins > 0 ? `${mins}:${secs.padStart(6, '0')}` : `${secs}s`
-}
 
-/**
- * Plantilla de Foto/Avatar del piloto
- */
-export const AvatarTemplate = (photoUrl: string | null, fullName: string, acronym: string): string => {
-  if (photoUrl) {
-    return `<img src="${photoUrl}" alt="${fullName}" class="driver-photo" loading="lazy" />`
+  if (hrs === 0) {
+    const paddedSecs = (seconds % 60) < 10 ? `0${secs}` : secs
+    return `${mins}:${paddedSecs}`
   }
-  return `<div class="driver-photo-placeholder">${acronym}</div>`
+
+  const paddedMins = mins < 10 ? `0${mins}` : mins
+  const paddedSecs = (seconds % 60) < 10 ? `0${secs}` : secs
+  return `${hrs}:${paddedMins}:${paddedSecs}`
 }
 
 /**
- * MODO GENERAL: Tarjeta de la parrilla de todos los participantes
+ * Crea el componente de Foto/Avatar del piloto
  */
-export const DriverCardTemplate = (driver: DriverStats, isWinner: boolean): string => `
-  <article class="driver-card ${isWinner ? 'is-winner' : ''}" style="border-top: 4px solid ${driver.teamColor}">
-    <div class="card-header">
-      <span class="driver-number">#${driver.driverNumber}</span>
-      <span class="team-badge" style="background-color: ${driver.teamColor}">${driver.teamName}</span>
-    </div>
+export function AvatarElement(photoUrl: string | null, fullName: string, acronym: string): HTMLElement {
+  if (photoUrl) {
+    const img = document.createElement('img')
+    img.src = photoUrl
+    img.alt = fullName
+    img.className = 'driver-photo'
+    img.loading = 'lazy'
+    return img
+  }
 
-    <div class="card-body">
-      ${AvatarTemplate(driver.headshotUrl, driver.fullName, driver.acronym)}
-      <div class="driver-details">
-        <h4>${driver.fullName}</h4>
-        <p class="acronym">${driver.acronym}</p>
-      </div>
-    </div>
-
-    <div class="card-stats">
-      <div class="stat-item">
-        <span class="stat-label">Vueltas</span>
-        <span class="stat-value">${driver.totalLaps}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Mejor Vuelta</span>
-        <span class="stat-value highlight">${formatTime(driver.bestLapTime)}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Promedio</span>
-        <span class="stat-value">${formatTime(driver.averageLapTime)}</span>
-      </div>
-    </div>
-  </article>
-`
+  const placeholder = document.createElement('div')
+  placeholder.className = 'driver-photo-placeholder'
+  placeholder.textContent = acronym
+  return placeholder
+}
 
 /**
- * MODO 1: Tarjeta de Análisis de Piloto Individual
+ * MODO GENERAL: Tarjeta base para la parrilla
  */
-export const SingleDriverTemplate = (driver: DriverStats, position: number): string => `
-  <article class="driver-card single-view" style="border-top: 4px solid ${driver.teamColor}">
-    <div class="card-header">
-      <span class="driver-position">P${position}</span>
-      <span class="team-badge" style="background-color: ${driver.teamColor}">${driver.teamName}</span>
-    </div>
+export function DriverCardTemplate(driver: DriverStats, isWinner: boolean = false): HTMLElement {
+  const card = document.createElement('article')
+  const normalizedTeam = driver.teamName.toLowerCase().replace(/\s+/g, '-')
+  card.className = `driver-card team-${normalizedTeam} ${isWinner ? 'is-winner' : ''}`
 
-    <div class="card-body">
-      ${AvatarTemplate(driver.headshotUrl, driver.fullName, driver.acronym)}
-      <div class="driver-details">
-        <h3>${driver.fullName}</h3>
-        <p class="acronym">#${driver.driverNumber} · ${driver.acronym}</p>
-      </div>
-    </div>
+  // Cabecera con Chapa de Dorsal estilo F1
+  const cardHeader = document.createElement('div')
+  cardHeader.className = 'card-header'
 
-    <div class="card-stats grid-stats">
-      <div class="stat-item">
-        <span class="stat-label">Posición Estimada</span>
-        <span class="stat-value">P${position}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Mejor Vuelta</span>
-        <span class="stat-value highlight">${formatTime(driver.bestLapTime)}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Ritmo Medio de Carrera</span>
-        <span class="stat-value">${formatTime(driver.averageLapTime)}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Vueltas Totales</span>
-        <span class="stat-value">${driver.totalLaps}</span>
-      </div>
-    </div>
-  </article>
-`
+  const driverNum = document.createElement('span')
+  driverNum.className = 'driver-number-badge'
+  driverNum.textContent = `Nº ${driver.driverNumber}`
+
+  const teamBadge = document.createElement('span')
+  teamBadge.className = 'team-badge'
+  teamBadge.textContent = isWinner ? '🏆 GANADOR' : driver.teamName
+
+  cardHeader.append(driverNum, teamBadge)
+
+  // Cuerpo
+  const cardBody = document.createElement('div')
+  cardBody.className = 'card-body'
+
+  const avatar = AvatarElement(driver.headshotUrl, driver.fullName, driver.acronym)
+
+  const details = document.createElement('div')
+  details.className = 'driver-details'
+
+  const name = document.createElement('h3')
+  name.textContent = driver.fullName
+
+  const acronym = document.createElement('span')
+  acronym.className = 'acronym'
+  acronym.textContent = driver.acronym
+
+  details.append(name, acronym)
+  cardBody.append(avatar, details)
+
+  // Estadísticas
+  const cardStats = document.createElement('div')
+  cardStats.className = 'card-stats'
+
+  // Vueltas
+  const lapsItem = document.createElement('div')
+  lapsItem.className = 'stat-item'
+  lapsItem.innerHTML = '' // Asegurar nodo limpio
+  const lapsLabel = document.createElement('span')
+  lapsLabel.className = 'stat-label'
+  lapsLabel.textContent = 'Vueltas'
+  const lapsVal = document.createElement('span')
+  lapsVal.className = 'stat-value'
+  lapsVal.textContent = driver.totalLaps.toString()
+  lapsItem.append(lapsLabel, lapsVal)
+
+  // Mejor Vuelta
+  const bestItem = document.createElement('div')
+  bestItem.className = 'stat-item'
+  const bestLabel = document.createElement('span')
+  bestLabel.className = 'stat-label'
+  bestLabel.textContent = 'Mejor Vuelta'
+  const bestVal = document.createElement('span')
+  bestVal.className = 'stat-value highlight'
+  bestVal.textContent = formatTime(driver.bestLapTime)
+  bestItem.append(bestLabel, bestVal)
+
+  // Promedio
+  const avgItem = document.createElement('div')
+  avgItem.className = 'stat-item'
+  const avgLabel = document.createElement('span')
+  avgLabel.className = 'stat-label'
+  avgLabel.textContent = 'Promedio'
+  const avgVal = document.createElement('span')
+  avgVal.className = 'stat-value'
+  avgVal.textContent = formatTime(driver.averageLapTime)
+  avgItem.append(avgLabel, avgVal)
+
+  cardStats.append(lapsItem, bestItem, avgItem)
+  card.append(cardHeader, cardBody, cardStats)
+
+  return card
+}
+
+/**
+ * MODO 1: Tarjeta para Ficha de Piloto Individual
+ */
+export function SingleDriverTemplate(driver: DriverStats, position: number): HTMLElement {
+  const card = DriverCardTemplate(driver)
+  card.classList.add('single-view')
+
+  if (position > 0) {
+    const posElem = document.createElement('div')
+    posElem.className = 'driver-position-badge'
+    posElem.textContent = `Población Estimada: P${position}`
+    card.prepend(posElem)
+  }
+
+  return card
+}
 
 /**
  * MODO 2: Tarjeta del Ganador de la Carrera
  */
-export const WinnerTemplate = (winner: DriverStats): string => `
-  <article class="driver-card winner-card" style="border-top: 4px solid ${winner.teamColor}">
-    <div class="card-header">
-      <span class="badge-trophy">🏆 GANADOR DE LA CARRERA</span>
-      <span class="team-badge" style="background-color: ${winner.teamColor}">${winner.teamName}</span>
-    </div>
-
-    <div class="card-body">
-      ${AvatarTemplate(winner.headshotUrl, winner.fullName, winner.acronym)}
-      <div class="driver-details">
-        <h3>${winner.fullName}</h3>
-        <p class="acronym">#${winner.driverNumber} · ${winner.acronym}</p>
-      </div>
-    </div>
-
-    <div class="card-stats grid-stats">
-      <div class="stat-item">
-        <span class="stat-label">Vueltas Completadas</span>
-        <span class="stat-value">${winner.totalLaps} (100%)</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Ritmo Promedio Total</span>
-        <span class="stat-value highlight">${formatTime(winner.averageLapTime)}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Mejor Vuelta</span>
-        <span class="stat-value">${formatTime(winner.bestLapTime)}</span>
-      </div>
-    </div>
-  </article>
-`
+export function WinnerTemplate(winner: DriverStats): HTMLElement {
+  const card = DriverCardTemplate(winner, true)
+  card.classList.add('winner-card')
+  return card
+}
 
 /**
  * MODO 3: Tarjeta de la Mejor Vuelta de la Sesión
  */
-export const FastestLapTemplate = (fastestDriver: DriverStats): string => `
-  <article class="driver-card fastest-lap-card" style="border-top: 4px solid ${fastestDriver.teamColor}">
-    <div class="card-header">
-      <span class="badge-fastest">⚡ MEJOR VUELTA DE LA SESIÓN</span>
-      <span class="team-badge" style="background-color: ${fastestDriver.teamColor}">${fastestDriver.teamName}</span>
-    </div>
+export function FastestLapTemplate(fastestDriver: DriverStats): HTMLElement {
+  const card = DriverCardTemplate(fastestDriver)
+  card.classList.add('winner-card')
 
-    <div class="card-body">
-      ${AvatarTemplate(fastestDriver.headshotUrl, fastestDriver.fullName, fastestDriver.acronym)}
-      <div class="driver-details">
-        <h3>${fastestDriver.fullName}</h3>
-        <p class="acronym">#${fastestDriver.driverNumber} · ${fastestDriver.acronym}</p>
-      </div>
-    </div>
+  const badge = card.querySelector('.team-badge')
+  if (badge) {
+    badge.textContent = '⚡ MEJOR VUELTA'
+  }
 
-    <div class="card-stats">
-      <div class="stat-item highlight-box">
-        <span class="stat-label">Tiempo Record</span>
-        <span class="stat-value mega-time">${formatTime(fastestDriver.bestLapTime)}</span>
-      </div>
-    </div>
-  </article>
-`
+  return card
+}
