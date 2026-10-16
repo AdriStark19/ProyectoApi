@@ -1,6 +1,6 @@
 # 🏁 Pit Wall — Fórmula 1 con OpenF1
-
-# Como probarlo
+  M2 · Async Odyssey
+## Como probarlo
 
 - **Calendario por temporada** (2023 → actual) con buscador que ignora tildes y mayúsculas
   ("mexico" encuentra "México") y resumen de GP disputados y pendientes.
@@ -16,8 +16,8 @@
   "Desde caché" o "Recién descargado", y un botón permite vaciarla.
 
 
-# Declaración de uso de IA
+## Declaración de uso de IA
   Es una versión alternativa en la que he delegado todo en la IA salvo la elección de la API.
 
-# Autopsia
+## Autopsia
   He pedido el proyecto a Claude y he borrado archivos residuales y algunas carpetas innecesarias.  
