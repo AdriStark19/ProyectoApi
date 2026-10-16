@@ -1,221 +1,168 @@
-import { fetchDriverStats, fetchSessionsByYear, fetchDriversByYear, } from './api/f1Api'
-import { getWinner, getFastestLapDriver } from './utils/dataTransformers'
-import { 
-  renderAllDrivers, 
-  renderSingleDriver, 
-  renderWinnerView, 
-  renderFastestLapView, 
-  renderLoading, 
-  renderError 
-} from './ui/render'
-import type { DriverStats, SessionInfo } from './types/f1'
+/**
+ * Punto de entrada: conecta los controles del index.html con la API,
+ * la lógica y el render. Aquí vive el estado de la app.
+ */
 
-// Estado global
-let availableSessions: SessionInfo[] = []
-let currentSession: SessionInfo | null = null
-let currentStats: DriverStats[] = []
-let currentWinner: DriverStats | null = null
-let currentFastest: DriverStats | null = null
-let currentView: 'grid' | 'single' | 'winner' | 'fastest' = 'grid'
+import './styles/main.css';
+import type { Meeting, Session } from './types/openf1.ts';
+import { getMeetings, getSessionBundle, getSessions } from './api/openf1.ts';
+import { clearCache, countCacheEntries } from './api/cache.ts';
+import { toUserMessage } from './api/http.ts';
+import { filterMeetings, hasStarted, pickDefaultSession, prepareMeetings, prepareSessions, roundNumbers, summarizeSeason } from './logic/calendar.ts';
+import { buildStandings } from './logic/standings.ts';
+import { h, mount, requireElement } from './ui/dom.ts';
+import { emptyView, errorView, loadingView } from './ui/states.ts';
+import { calendarView } from './ui/calendarView.ts';
+import { futureSessionView, meetingHeaderView, sessionTabsView, standingsView } from './ui/sessionView.ts';
 
-// Referencias DOM
-const yearSelect = document.getElementById('year-select') as HTMLSelectElement | null
-const sessionSelect = document.getElementById('session-select') as HTMLSelectElement | null
-const driverSelectContainer = document.getElementById('driver-select-container')
-const driverSelect = document.getElementById('driver-select') as HTMLSelectElement | null
-const searchContainer = document.getElementById('search-container')
-const searchInput = document.getElementById('search-input') as HTMLInputElement | null
-const navButtons = document.querySelectorAll<HTMLButtonElement>('.nav-btn')
+const FIRST_SEASON = 2023; // OpenF1 tiene datos históricos desde 2023
+const CURRENT_SEASON = new Date().getFullYear();
 
-function setupYearSelector(): void {
-  if (!yearSelect) return
+const elements = {
+  yearSelect: requireElement<HTMLSelectElement>('#year-select'),
+  search: requireElement<HTMLInputElement>('#meeting-search'),
+  cacheButton: requireElement<HTMLButtonElement>('#cache-button'),
+  calendar: requireElement<HTMLElement>('#calendar-panel'),
+  detail: requireElement<HTMLElement>('#detail-panel'),
+};
 
-  const startYear = 2023
-  const currentYear = new Date().getFullYear()
+const state = {
+  year: CURRENT_SEASON,
+  meetings: [] as Meeting[],
+  meetingsFromCache: false,
+  selectedMeeting: null as Meeting | null,
+  sessions: [] as Session[],
+  selectedSession: null as Session | null,
+};
 
-  const options: HTMLOptionElement[] = []
+/*
+ * Si el usuario hace clic rápido en varios GP, las respuestas pueden llegar
+ * desordenadas. Cada carga se apunta un número y, al volver, solo pinta si
+ * sigue siendo la petición más reciente de su panel.
+ */
+const latestRequest = { calendar: 0, meeting: 0, session: 0 };
 
-  for (let year = currentYear; year >= startYear; year--) {
-    const option = document.createElement('option')
-    option.value = year.toString()
-    option.textContent = year.toString()
-    options.push(option)
-  }
+const standingsSlot = h('div', { className: 'results', attrs: { 'aria-live': 'polite' } });
 
-  yearSelect.replaceChildren(...options)
-  yearSelect.value = '2023' // Año por defecto estable
+function renderCalendar(): void {
+  const visible = filterMeetings(state.meetings, elements.search.value);
+  mount(elements.calendar, ...calendarView({
+    year: state.year,
+    meetings: visible,
+    summary: summarizeSeason(state.meetings),
+    rounds: roundNumbers(state.meetings),
+    selectedKey: state.selectedMeeting?.meeting_key ?? null,
+    fromCache: state.meetingsFromCache,
+    onSelect: (meeting) => void selectMeeting(meeting),
+  }));
 }
 
-function populateSessionDropdown(sessions: SessionInfo[]): void {
-  if (!sessionSelect) return
-
-  const defaultOption = document.createElement('option')
-  defaultOption.value = ''
-  defaultOption.textContent = '-- Selecciona una sesión --'
-
-  const options = sessions.map((s) => {
-    const option = document.createElement('option')
-    option.value = s.sessionKey.toString()
-    option.textContent = `${s.sessionName} (${s.sessionType})`
-    return option
-  })
-
-  sessionSelect.replaceChildren(defaultOption, ...options)
-  sessionSelect.value = ''
-}
-function populateDriverDropdown(stats: DriverStats[]): void {
-  if (!driverSelect) return
-
-  const defaultOption = document.createElement('option')
-  defaultOption.value = ''
-  defaultOption.textContent = '-- Selecciona un piloto --'
-
-  const sortedStats = [...stats].sort((a, b) => a.driverNumber - b.driverNumber)
-
-  const options = sortedStats.map((driver) => {
-    const option = document.createElement('option')
-    option.value = driver.driverNumber.toString()
-    option.textContent = `Nº ${driver.driverNumber} - ${driver.fullName} (${driver.acronym})`
-    return option
-  })
-
-  driverSelect.replaceChildren(defaultOption, ...options)
+function renderDetail(): void {
+  if (!state.selectedMeeting) return;
+  mount(
+    elements.detail,
+    meetingHeaderView(state.selectedMeeting),
+    sessionTabsView(state.sessions, state.selectedSession?.session_key ?? null, (session) => void selectSession(session)),
+    standingsSlot,
+  );
 }
 
-function updateView(): void {
-  if (currentView === 'grid') {
-    if (searchContainer) searchContainer.classList.remove('hidden')
-    if (driverSelectContainer) driverSelectContainer.classList.add('hidden')
-
-    const query = searchInput?.value.toLowerCase().trim() || ''
-    const filtered = currentStats.filter((driver) => 
-      driver.fullName.toLowerCase().includes(query) ||
-      driver.teamName.toLowerCase().includes(query) ||
-      driver.acronym.toLowerCase().includes(query)
-    )
-
-    renderAllDrivers(filtered, currentWinner)
-  } else if (currentView === 'single') {
-    if (searchContainer) searchContainer.classList.add('hidden')
-    if (driverSelectContainer) driverSelectContainer.classList.remove('hidden')
-
-    if (driverSelect && !driverSelect.value && currentStats.length > 0) {
-      const sortedStats = [...currentStats].sort((a, b) => a.driverNumber - b.driverNumber)
-      driverSelect.value = sortedStats[0].driverNumber.toString()
-    }
-
-    const selectedDriverNumber = Number(driverSelect?.value)
-    const selectedDriver = currentStats.find((d) => d.driverNumber === selectedDriverNumber) || null
-
-    const position = selectedDriver ? currentStats.indexOf(selectedDriver) + 1 : 0
-    renderSingleDriver(selectedDriver, position)
-  } else if (currentView === 'winner') {
-    if (searchContainer) searchContainer.classList.add('hidden')
-    if (driverSelectContainer) driverSelectContainer.classList.add('hidden')
-
-    renderWinnerView(currentWinner)
-  } else if (currentView === 'fastest') {
-    if (searchContainer) searchContainer.classList.add('hidden')
-    if (driverSelectContainer) driverSelectContainer.classList.add('hidden')
-
-    renderFastestLapView(currentFastest)
-  }
-}
-
-async function loadDataForYear(
-  year: number,
-  sessionKey?: number
-): Promise<void> {
-  renderLoading()
+async function loadSeason(year: number): Promise<void> {
+  const requestId = ++latestRequest.calendar;
+  Object.assign(state, { year, meetings: [], selectedMeeting: null, sessions: [], selectedSession: null });
+  mount(elements.calendar, loadingView(`Cargando el calendario ${year}…`));
+  mount(elements.detail, emptyView('Elige un Gran Premio', 'Verás sus sesiones, el podio y la tabla de tiempos.'));
 
   try {
-    availableSessions = await fetchSessionsByYear(year)
-    populateSessionDropdown(availableSessions)
+    const { data, fromCache } = await getMeetings(year);
+    if (requestId !== latestRequest.calendar) return;
+    state.meetings = prepareMeetings(data);
+    state.meetingsFromCache = fromCache;
 
-    currentSession = null
-    currentStats = []
-    currentWinner = null
-    currentFastest = null
-
-    if (!sessionKey) {
-      // Estado inicial: parrilla del año sin estadísticas de sesión.
-      currentStats = await fetchDriversByYear(year)
-
-      populateDriverDropdown(currentStats)
-      updateView()
-      return
+    if (state.meetings.length === 0) {
+      mount(elements.calendar, emptyView(`OpenF1 no tiene eventos para ${year}`, 'Prueba con otra temporada.'));
+      return;
     }
-
-    if (sessionSelect) {
-      sessionSelect.value = sessionKey.toString()
-    }
-
-    const result = await fetchDriverStats(year, sessionKey)
-
-    currentSession = result.session
-    currentStats = result.stats
-
-    currentWinner = getWinner(
-      currentStats,
-      currentSession?.sessionType
-    )
-
-    currentFastest = getFastestLapDriver(currentStats)
-
-    populateDriverDropdown(currentStats)
-    updateView()
+    renderCalendar();
   } catch (error) {
-    const errorMsg = error instanceof Error
-      ? error.message
-      : 'Error al cargar telemetría.'
-
-    renderError(errorMsg)
+    if (requestId !== latestRequest.calendar) return;
+    console.error('[calendario]', error);
+    mount(elements.calendar, errorView(toUserMessage(error), () => void loadSeason(year)));
+  } finally {
+    updateCacheButton();
   }
 }
 
-function initEvents(): void {
-  // Cambio de año -> Recarga sesiones
-  yearSelect?.addEventListener('change', (e) => {
-    const selectedYear = Number((e.target as HTMLSelectElement).value)
-    loadDataForYear(selectedYear)
-  })
+async function selectMeeting(meeting: Meeting): Promise<void> {
+  const requestId = ++latestRequest.meeting;
+  latestRequest.session++; // invalida cualquier tabla que estuviera cargando
+  Object.assign(state, { selectedMeeting: meeting, sessions: [], selectedSession: null });
+  renderCalendar();
+  mount(elements.detail, meetingHeaderView(meeting), loadingView('Consultando las sesiones del fin de semana…'));
 
-  // Cambio de sesión -> Carga la sesión seleccionada del desplegable
- sessionSelect?.addEventListener('change', (e) => {
-  const selectedYear = Number(yearSelect?.value || 2023)
-  const value = (e.target as HTMLSelectElement).value
+  try {
+    const { data } = await getSessions(meeting.meeting_key);
+    if (requestId !== latestRequest.meeting) return;
+    state.sessions = prepareSessions(data);
+    renderDetail();
 
-  loadDataForYear(
-    selectedYear,
-    value ? Number(value) : undefined
-  )
-})
-
-  navButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      navButtons.forEach((b) => b.classList.remove('active'))
-      btn.classList.add('active')
-
-      currentView = (btn.dataset.view as typeof currentView) || 'grid'
-      updateView()
-    })
-  })
-
-  searchInput?.addEventListener('input', () => {
-    if (currentView === 'grid') updateView()
-  })
-
-  driverSelect?.addEventListener('change', () => {
-    if (currentView === 'single') updateView()
-  })
+    const defaultSession = pickDefaultSession(state.sessions);
+    if (defaultSession) await selectSession(defaultSession);
+  } catch (error) {
+    if (requestId !== latestRequest.meeting) return;
+    console.error('[sesiones]', error);
+    mount(elements.detail, meetingHeaderView(meeting), errorView(toUserMessage(error), () => void selectMeeting(meeting)));
+  } finally {
+    updateCacheButton();
+  }
 }
 
-function init(): void {
-  setupYearSelector()
-  initEvents()
+async function selectSession(session: Session): Promise<void> {
+  const requestId = ++latestRequest.session;
+  state.selectedSession = session;
+  renderDetail();
 
-  const initialYear = Number(yearSelect?.value || 2023)
-  loadDataForYear(initialYear)
+  // Sesión futura: no gastamos peticiones en algo que todavía no tiene datos
+  if (!hasStarted(session)) {
+    mount(standingsSlot, futureSessionView(session));
+    return;
+  }
+
+  mount(standingsSlot, loadingView(`Descargando tiempos de ${session.session_name}…`));
+  try {
+    const bundle = await getSessionBundle(session.session_key);
+    if (requestId !== latestRequest.session) return;
+    const standings = buildStandings(bundle.results, bundle.drivers, bundle.laps);
+    mount(standingsSlot, ...standingsView(session, standings, bundle.fromCache));
+  } catch (error) {
+    if (requestId !== latestRequest.session) return;
+    console.error('[tiempos]', error);
+    mount(standingsSlot, errorView(toUserMessage(error), () => void selectSession(session)));
+  } finally {
+    updateCacheButton();
+  }
 }
 
-init()
+function updateCacheButton(): void {
+  const entries = countCacheEntries();
+  elements.cacheButton.textContent = entries > 0 ? `Vaciar caché (${entries})` : 'Caché vacía';
+  elements.cacheButton.disabled = entries === 0;
+}
+
+function setupControls(): void {
+  const seasons = Array.from({ length: CURRENT_SEASON - FIRST_SEASON + 1 }, (_, index) => CURRENT_SEASON - index);
+  elements.yearSelect.replaceChildren(...seasons.map((year) => h('option', { text: String(year), attrs: { value: String(year) } })));
+  elements.yearSelect.value = String(CURRENT_SEASON);
+
+  elements.yearSelect.addEventListener('change', () => void loadSeason(Number(elements.yearSelect.value)));
+  elements.search.addEventListener('input', () => {
+    if (state.meetings.length > 0) renderCalendar();
+  });
+  elements.cacheButton.addEventListener('click', () => {
+    clearCache();
+    updateCacheButton();
+  });
+}
+
+setupControls();
+void loadSeason(CURRENT_SEASON);

@@ -1,12 +1,23 @@
-# API F1
+# 🏁 Pit Wall — Fórmula 1 con OpenF1
 
-## Cómo probarlo
-La Página inicialmente muestra los pilotos de la parrilla del año actual. Hay un selector de año y un selector de sesión, las sesiones están agrupadas por año y en orden temporal. Para las sesiones de carrera se puede calcular el ganador a través del tiempo empleado en la carrera y la comprobación de si completó todas las vueltas. Para el resto de sesiones el cálculo de ganador da un error. Para todo tipos de sesiones se dispone de fichas de pilotos y de la mejor vuelta.
+# Como probarlo
 
-## Uso de IA
-IA usada para encontrar una API pública sin registros de una temática de mi interés. Al desconocer la API le pedí después que con la rúbrica de la misión me diera las clases para gestionar dicha API, de esa manera todo el código es pedido a Gemini especificando el uso que quiero dar a los datos de la API (ver pilotos por sesión, mejor vuelta, ganador, ritmo medio). Además le he pedido el css para que me configure cada card según el equipo al que corresponde un piloto. Volver a pedir el cálculo del ganador para que solo se aplique en carrera que es cuando tiene sentido.
+- **Calendario por temporada** (2023 → actual) con buscador que ignora tildes y mayúsculas
+  ("mexico" encuentra "México") y resumen de GP disputados y pendientes.
+- **Sesiones del fin de semana** como pestañas; se abre sola la última sesión terminada.
+- **Podio y tabla de tiempos**: posición, tiempo, gap, vueltas, mejor vuelta y ritmo medio.
+  Abandonos (DNF), no salidas (DNS) y descalificados (DSQ) se muestran aparte.
+- **Clasificación provisional**: si OpenF1 todavía no ha publicado el resultado oficial,
+  la tabla se calcula ordenando a los pilotos por su mejor vuelta.
+- **Estados de carga y error**: semáforo de salida animado mientras carga y "bandera roja"
+  con botón de reintentar si algo falla.
+- **Bonus — caché en localStorage**: cada respuesta se guarda con fecha de caducidad
+  (12 h el calendario, 7 días los tiempos). Una etiqueta indica si los datos vienen
+  "Desde caché" o "Recién descargado", y un botón permite vaciarla.
 
 
-## Autopsia
-Pedí a la IA el código TS sin ";" por lo que me devolvió también con ese formato el css y se lo tuve que pedir nuevamente de forma correcta esta vez. Control de que elegir ganador solo se utilice con una carrera.
-En una de las primeras versiones del código se mostraban directamente pilotos con una sesión que ni se podía saber cuál era por lo que cambio a que la vista inicial solo sea parrilla de ese año.
+# Declaración de uso de IA
+  Es una versión alternativa en la que he delegado todo en la IA salvo la elección de la API.
+
+# Autopsia
+  He pedido el proyecto a Claude y he borrado archivos residuales y algunas carpetas innecesarias.  
