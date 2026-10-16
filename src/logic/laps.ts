@@ -48,7 +48,11 @@ function summarizeDriverLaps(driverNumber: number, laps: Lap[]): DriverLapStats 
 export function buildLapStats(laps: Lap[]): Map<number, DriverLapStats> {
   const lapsByDriver = laps
     .filter((lap) => Number.isFinite(lap?.driver_number))
-    .reduce((groups, lap) => groups.set(lap.driver_number, [...(groups.get(lap.driver_number) ?? []), lap]), new Map<number, Lap[]>());
+    .reduce((groups, lap) => {
+      const driverLaps = groups.get(lap.driver_number) ?? [];
+      driverLaps.push(lap);
+      return groups.set(lap.driver_number, driverLaps);
+    }, new Map<number, Lap[]>());
 
   return new Map([...lapsByDriver].map(([driverNumber, driverLaps]) => [driverNumber, summarizeDriverLaps(driverNumber, driverLaps)]));
 }

@@ -20,4 +20,10 @@
   Es una versión alternativa en la que he delegado todo en la IA salvo la elección de la API.
 
 ## Autopsia
-  He pedido el proyecto a Claude y he borrado archivos residuales y algunas carpetas innecesarias.  
+  He pedido el proyecto a Claude y he borrado archivos residuales y algunas carpetas innecesarias.
+  Tras la corrección cambio de => groups.set(lap.driver_number, [...(groups.get(lap.driver_number) ?? []), lap]), new Map<number, Lap[]>()); 
+  por  .reduce((groups, lap) => {
+    const driverLaps = groups.get(lap.driver_number) ?? [];
+    driverLaps.push(lap);
+    return groups.set(lap.driver_number, driverLaps);
+  }, new Map<number, Lap[]>()); para evitar una copia del array en cada vuelta 
