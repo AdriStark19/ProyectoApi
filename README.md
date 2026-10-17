@@ -16,7 +16,7 @@
   "Desde caché" o "Recién descargado", y un botón permite vaciarla.
 
 
-## Declaración de uso de IA
+## Uso de IA
   Es una versión alternativa en la que he delegado todo en la IA salvo la elección de la API.
 
 ## Autopsia
